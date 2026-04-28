@@ -28,6 +28,3 @@ packages/napcat-develop/config/.env
 # dev helper scripts
 _kill_napcat.ps1
 _rebuild.ps1
-Dockerfile
-docker-entrypoint.sh
-.dockerignore

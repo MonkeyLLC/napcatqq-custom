@@ -1,0 +1,15 @@
+.git
+.github
+.claude
+.idea
+node_modules
+**/node_modules
+**/dist
+
+# 开发辅助脚本和日志
+_*.ps1
+_*.log
+nul
+
+# 无关目录
+抓包/
