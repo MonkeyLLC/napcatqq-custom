@@ -394,7 +394,7 @@ export class NTQQGroupApi {
     let shift = 0n;
     let pos = offset;
     while (pos < buf.length) {
-      const byte = buf[pos++];
+      const byte = buf[pos++]!;
       result |= BigInt(byte & 0x7f) << shift;
       if ((byte & 0x80) === 0) return [result, pos];
       shift += 7n;
