@@ -14,24 +14,23 @@ COPY . .
 RUN pnpm install
 RUN pnpm run build:shell
 
-# ------ Stage 2: 运行环境 ------
-FROM node:20-slim
+# ------ Stage 2: 运行环境（使用 Ubuntu，QQ Linux 的目标系统）------
+FROM ubuntu:22.04
 
 # QQ Linux 版本，可通过 --build-arg 覆盖
 ARG QQ_DEB_URL_AMD64=https://dldir1v6.qq.com/qqfile/qq/QQNT/f9cbaab2/linuxqq_3.2.28-48517_amd64.deb
 ARG QQ_DEB_URL_ARM64=https://dldir1v6.qq.com/qqfile/qq/QQNT/f9cbaab2/linuxqq_3.2.28-48517_arm64.deb
 
-# 安装 QQ Linux 及运行时依赖
+ENV DEBIAN_FRONTEND=noninteractive
+
+# 安装 Node.js 20.x + QQ Linux 及所有依赖
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-      wget ca-certificates \
-      # wrapper.node 运行时依赖的共享库
-      libglib2.0-0 libnss3 libatk-bridge2.0-0 \
-      libcups2 libdrm2 libgtk-3-0 libgbm1 \
-      libasound2 libx11-xcb1 libxcomposite1 \
-      libxdamage1 libxrandr2 libpango-1.0-0 \
-      libcairo2 libatspi2.0-0 \
-      libgnutls30 libnotify4 libxss1 libxtst6 && \
+      curl ca-certificates gnupg && \
+    # 添加 NodeSource 源安装 Node.js 20
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y --no-install-recommends nodejs && \
+    # 下载并安装 QQ Linux
     ARCH=$(dpkg --print-architecture) && \
     if [ "$ARCH" = "arm64" ]; then \
       QQ_URL="${QQ_DEB_URL_ARM64}"; \
@@ -39,7 +38,7 @@ RUN apt-get update && \
       QQ_URL="${QQ_DEB_URL_AMD64}"; \
     fi && \
     echo "Downloading QQ: $QQ_URL" && \
-    wget -q -O /tmp/qq.deb "$QQ_URL" && \
+    curl -fsSL -o /tmp/qq.deb "$QQ_URL" && \
     dpkg -i /tmp/qq.deb || apt-get install -f -y && \
     rm -f /tmp/qq.deb && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
