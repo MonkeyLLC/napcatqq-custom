@@ -386,22 +386,268 @@ export class NTQQGroupApi {
     return notifies;
   }
 
+  /**
+   * 从原始 protobuf 字节中解析 varint
+   */
+  private static pbDecodeVarint (buf: Buffer, offset: number): [bigint, number] {
+    let result = 0n;
+    let shift = 0n;
+    let pos = offset;
+    while (pos < buf.length) {
+      const byte = buf[pos++];
+      result |= BigInt(byte & 0x7f) << shift;
+      if ((byte & 0x80) === 0) return [result, pos];
+      shift += 7n;
+    }
+    return [result, pos];
+  }
+
+  /**
+   * 从原始 protobuf 包中提取指定 field 的 bytes 值（只取第一个匹配）
+   */
+  private static pbExtractField (buf: Buffer, targetField: number): Buffer | null {
+    let pos = 0;
+    while (pos < buf.length) {
+      const [tag, np1] = NTQQGroupApi.pbDecodeVarint(buf, pos);
+      pos = np1;
+      const fieldNum = Number(tag >> 3n);
+      const wireType = Number(tag & 7n);
+      if (fieldNum === 0) break;
+      if (wireType === 0) {
+        const [, np2] = NTQQGroupApi.pbDecodeVarint(buf, pos);
+        pos = np2;
+      } else if (wireType === 2) {
+        const [len, np2] = NTQQGroupApi.pbDecodeVarint(buf, pos);
+        pos = np2;
+        const data = buf.subarray(pos, pos + Number(len));
+        pos += Number(len);
+        if (fieldNum === targetField) return Buffer.from(data);
+      } else if (wireType === 5) {
+        pos += 4;
+      } else if (wireType === 1) {
+        pos += 8;
+      } else {
+        break;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * 从搜索群响应的原始协议包中提取 joinGroupAuth (protobuf field 93)
+   * NapCat 的 C++ binding 错误地将 joinGroupAuth 映射到 field 39（始终为空），
+   * 实际的 auth token 在 field 93。
+   * 路径: OIDB body(f4) → groupInfos item(f4) → detail wrapper(f2) → inner(f1) → auth(f93)
+   */
+  private extractAuthFromPacket (hexData: string): string {
+    try {
+      const buf = Buffer.from(hexData, 'hex');
+      const body = NTQQGroupApi.pbExtractField(buf, 4);
+      if (!body) return '';
+      const groupItem = NTQQGroupApi.pbExtractField(body, 4);
+      if (!groupItem) return '';
+      const detail = NTQQGroupApi.pbExtractField(groupItem, 2);
+      if (!detail) return '';
+      const inner = NTQQGroupApi.pbExtractField(detail, 1);
+      if (!inner) return '';
+      const authBuf = NTQQGroupApi.pbExtractField(inner, 93);
+      if (!authBuf || authBuf.length === 0) return '';
+      return authBuf.toString('utf-8');
+    } catch {
+      return '';
+    }
+  }
+
   async searchGroup (groupCode: string) {
-    const [, ret] = await this.core.eventWrapper.callNormalEventV2(
-      'NodeIKernelSearchService/searchGroup',
-      'NodeIKernelSearchListener/onSearchGroupResult',
-      [{
-        keyWords: groupCode,
-        groupNum: 25,
-        exactSearch: false,
-        penetrate: '',
-      }],
-      (ret) => ret.result === 0,
-      (params) => !!params.groupInfos.find(g => g.groupCode === groupCode),
-      1,
-      5000
-    );
-    return ret.groupInfos.find(g => g.groupCode === groupCode);
+    // Hook 协议包拦截器，从原始 protobuf field 93 提取 joinGroupAuth
+    // （NapCat C++ binding 错误映射到 field 39，始终为空）
+    const packetHandler = this.context.packetHandler;
+    let capturedAuth = '';
+    const removeListener = packetHandler.onExact(1, 'OidbSvcTrpcTcp.0x8ba_36', ({ hex_data }) => {
+      const auth = this.extractAuthFromPacket(hex_data);
+      if (auth) capturedAuth = auth;
+    });
+
+    try {
+      const [, ret] = await this.core.eventWrapper.callNormalEventV2(
+        'NodeIKernelSearchService/searchGroup',
+        'NodeIKernelSearchListener/onSearchGroupResult',
+        [{
+          keyWords: groupCode,
+          groupNum: 25,
+          exactSearch: false,
+          penetrate: '',
+        }],
+        (ret) => ret.result === 0,
+        (params) => !!params.groupInfos.find(g => g.groupCode === groupCode),
+        1,
+        5000
+      );
+      const groupInfo = ret.groupInfos.find(g => g.groupCode === groupCode);
+      this.context.logger.log(`[searchGroup] groupCode=${groupCode} packetAuth=${capturedAuth ? 'yes' : 'no'}`);
+      return groupInfo
+        ? { ...groupInfo, packetAuth: capturedAuth }
+        : undefined;
+    } finally {
+      removeListener();
+    }
+  }
+
+  async activeJoinGroup (groupCode: string, options: {
+    comment?: string;
+    groupAnswer?: string;
+    joinGroupAuth?: string;
+    method?: 'req' | 'join';
+    search?: boolean;
+    serviceType?: number;
+    answerMode?: 'both' | 'postscript' | 'group_answer';
+  } = {}) {
+    const normalizedGroupCode = groupCode.toString();
+    const searchGroup = options.search === false
+      ? undefined
+      : await this.searchGroup(normalizedGroupCode).catch((error) => {
+        this.context.logger.logWarn(`activeJoinGroup searchGroup failed: ${error}`);
+        return undefined;
+      });
+    const searchGroupInfo = searchGroup?.searchGroupInfo;
+    const groupService = this.context.session.getGroupService();
+    const joinInfoCandidates = options.search === false
+      ? []
+      : await Promise.all([options.serviceType, 1, 111, 0]
+          .filter((value, index, array): value is number => typeof value === 'number' && array.indexOf(value) === index)
+          .map(async (serviceType) => {
+            try {
+              const value = await groupService.getGroupInfoForJoinGroup(normalizedGroupCode, true, serviceType) as {
+                errCode?: number;
+                errMsg?: string;
+                result?: Record<string, unknown>;
+              };
+              return { serviceType, value };
+            } catch (error) {
+              this.context.logger.logWarn(`activeJoinGroup getGroupInfoForJoinGroup(${serviceType}) failed: ${error}`);
+              return undefined;
+            }
+          }));
+    const successfulJoinInfoCandidates = joinInfoCandidates.filter((candidate): candidate is NonNullable<typeof candidate> => candidate?.value?.errCode === 0);
+    const selectedJoinInfoCandidate = successfulJoinInfoCandidates
+      .slice()
+      .sort((left, right) => {
+        const score = (candidate: typeof left) => {
+          const result = candidate.value.result as {
+            groupOption?: number;
+            groupQuestion?: string;
+            groupAnswer?: string;
+            groupFlagExt?: number;
+            groupFlagExt3?: number;
+            appPrivilegeFlag?: number;
+          } | undefined;
+          let total = 0;
+          if (candidate.serviceType === 1) total += 1000;
+          if (candidate.serviceType === 111) total += 100;
+          if (candidate.serviceType === options.serviceType) total += 25;
+          if ((result?.groupFlagExt3 ?? 0) !== 0) total += 50;
+          if ((result?.groupFlagExt ?? 0) !== 0) total += 20;
+          if ((result?.groupOption ?? 0) !== 0) total += 10;
+          if (result?.groupQuestion) total += 10;
+          if (result?.groupAnswer) total += 5;
+          if ((result?.appPrivilegeFlag ?? 0) !== 0) total += 5;
+          return total;
+        };
+        return score(right) - score(left);
+      })[0];
+    const selectedJoinInfo = selectedJoinInfoCandidate?.value as {
+      errCode?: number;
+      errMsg?: string;
+      result?: {
+        groupCode?: string;
+        groupOption?: number;
+        groupQuestion?: string;
+        groupAnswer?: string;
+        appPrivilegeFlag?: number;
+        groupFlagExt?: number;
+        groupFlagExt3?: number;
+      };
+    } | undefined;
+    const selectedServiceType = selectedJoinInfoCandidate?.serviceType
+      ?? options.serviceType
+      ?? 1;
+    const joinInfoResult = selectedJoinInfo?.result;
+    const resolvedGroupOption = joinInfoResult?.groupOption || searchGroupInfo?.groupOption || 0;
+    const resolvedGroupQuestion = joinInfoResult?.groupQuestion || searchGroupInfo?.groupQuestion || '';
+    const resolvedGroupFlagExt = joinInfoResult?.groupFlagExt || searchGroupInfo?.groupFlagExt || 0;
+    const resolvedGroupFlagExt3 = joinInfoResult?.groupFlagExt3 || searchGroupInfo?.groupFlagExt3 || 0;
+    const noVerifyFlag = await Promise.resolve(groupService.getJoinGroupNoVerifyFlag(normalizedGroupCode, selectedServiceType)).catch((error) => {
+      this.context.logger.logWarn(`activeJoinGroup getJoinGroupNoVerifyFlag(${selectedServiceType}) failed: ${error}`);
+      return undefined;
+    }) as { result?: number; errMsg?: string; } | undefined;
+    const answer = options.groupAnswer ?? '';
+    const qnaFormattedPostscript = resolvedGroupOption === 4 && answer
+      ? `问题：${resolvedGroupQuestion}\n答案：${answer}`
+      : '';
+    const answerMode = options.answerMode ?? (resolvedGroupOption === 4 ? 'both' : 'postscript');
+    const resolvedComment = resolvedGroupOption === 4
+      ? (options.comment ?? qnaFormattedPostscript)
+      : (options.comment || answer || '');
+    const postscript = resolvedComment;
+    const groupAnswer = answerMode === 'postscript'
+      ? ''
+      : answer || searchGroupInfo?.groupAnswer || '';
+    const resolvedAuth = options.joinGroupAuth
+      ?? (searchGroup?.packetAuth || searchGroupInfo?.joinGroupAuth || '');
+    // Native joinGroup() reads these exact fields (discovered via Proxy diagnostic):
+    // groupCode, sourceId, sourceSubId, richMsg, applyMsg, token, auth, noVerifyAuth, transInfo
+    // It does NOT read: groupAnswer, postscript, joinGroupAuth, groupOption, etc.
+    const requestPayload = {
+      groupCode: normalizedGroupCode,
+      sourceId: 0,
+      sourceSubId: 0,
+      richMsg: '',
+      applyMsg: groupAnswer,  // answer goes here - native reads applyMsg, not groupAnswer
+      token: '',
+      auth: resolvedAuth,
+      noVerifyAuth: '',
+      transInfo: {},
+      // Legacy fields (not read by native joinGroup, but kept for reqToJoinGroup / logging)
+      serviceType: selectedServiceType,
+      groupOption: resolvedGroupOption,
+      groupQuestion: resolvedGroupQuestion,
+      appPrivilegeFlag: joinInfoResult?.appPrivilegeFlag ?? 0,
+      groupFlagExt: resolvedGroupFlagExt,
+      groupFlagExt3: resolvedGroupFlagExt3,
+      postscript,
+      groupAnswer,
+      joinGroupAuth: resolvedAuth,
+    };
+    const resolvedMethod = options.method ?? (resolvedGroupOption === 4 ? 'join' : 'req');
+    const method = resolvedMethod === 'join' ? 'joinGroup' : 'reqToJoinGroup';
+    this.context.logger.log(`[activeJoinGroup] method=${method} groupOption=${resolvedGroupOption} auth=${resolvedAuth ? 'yes' : 'no'} answer=${JSON.stringify(requestPayload.applyMsg)}`);
+
+    const callResult = method === 'joinGroup'
+      ? await Promise.resolve(groupService.joinGroup(requestPayload))
+      : await Promise.resolve(groupService.reqToJoinGroup(requestPayload));
+
+    this.context.logger.log(`[activeJoinGroup] result=${JSON.stringify(callResult)}`);
+
+    return {
+      groupCode: normalizedGroupCode,
+      method,
+      answerMode,
+      serviceType: selectedServiceType,
+      joinInfo: selectedJoinInfo ?? null,
+      noVerifyFlag: noVerifyFlag ?? null,
+      callResult,
+      requestPayload,
+      packetAuth: searchGroup?.packetAuth ?? null,
+      searchGroupInfo: searchGroupInfo
+        ? {
+            groupName: searchGroupInfo.groupName,
+            groupOption: searchGroupInfo.groupOption,
+            groupQuestion: searchGroupInfo.groupQuestion,
+            groupAnswer: searchGroupInfo.groupAnswer,
+            joinGroupAuth: searchGroupInfo.joinGroupAuth,
+          }
+        : undefined,
+    };
   }
 
   async getGroupMemberEx (groupCode: string, uid: string, forced: boolean = false, retry: number = 2) {

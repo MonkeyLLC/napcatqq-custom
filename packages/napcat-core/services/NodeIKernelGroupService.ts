@@ -257,11 +257,11 @@ export interface NodeIKernelGroupService {
     };
   }>;
 
-  getJoinGroupNoVerifyFlag (groupCode: string): unknown;
+  getJoinGroupNoVerifyFlag (groupCode: string, serviceType: number): unknown;
 
   getGroupArkInviteState (groupCode: string): unknown;
 
-  reqToJoinGroup (groupCode: string, arg: unknown): void;
+  reqToJoinGroup (arg: unknown): void;
 
   setGroupShutUp (groupCode: string, shutUp: boolean): Promise<GeneralCallResult>;
 
@@ -404,6 +404,8 @@ export interface NodeIKernelGroupService {
   halfScreenReportClick (arg: unknown): unknown;
 
   joinGroup (arg: unknown): unknown;
+
+  needInstructionsForJoinGroup (arg: unknown): unknown;
 
   listAllAIVoice (arg: unknown): unknown;
 

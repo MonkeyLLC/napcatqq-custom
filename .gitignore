@@ -21,3 +21,13 @@ tests/run/
 guild1.db-wal
 guild1.db-shm
 packages/napcat-develop/config/.env
+
+# agent
+.claude
+
+# dev helper scripts
+_kill_napcat.ps1
+_rebuild.ps1
+Dockerfile
+docker-entrypoint.sh
+.dockerignore

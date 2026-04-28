@@ -35,6 +35,8 @@ export const ActionName = {
   SetGroupRobotAddOption: 'set_group_robot_add_option',
   SetGroupAddOption: 'set_group_add_option',
   SetGroupSearch: 'set_group_search',
+  NCRequestJoinGroup: 'nc_request_join_group',
+  NCGetJoinGroupDebugInfo: 'nc_get_join_group_debug_info',
   // new extends 完全差异OneBot类别
   GetDoubtFriendsAddRequest: 'get_doubt_friends_add_request',
   SetDoubtFriendsAddRequest: 'set_doubt_friends_add_request',

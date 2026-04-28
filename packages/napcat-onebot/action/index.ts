@@ -127,6 +127,8 @@ import SetGroupKickMembers from './extends/SetGroupKickMembers';
 import { GetGroupDetailInfo } from './group/GetGroupDetailInfo';
 import GetGroupAddRequest from './extends/GetGroupAddRequest';
 import { GetCollectionList } from './extends/GetCollectionList';
+import { NCRequestJoinGroup } from './extends/NCRequestJoinGroup';
+import { NCGetJoinGroupDebugInfo } from './extends/NCGetJoinGroupDebugInfo';
 import { CompleteGroupTodo } from './packet/CompleteGroupTodo';
 import { CancelGroupTodo } from './packet/CancelGroupTodo';
 import { SetGroupTodo } from './packet/SetGroupTodo';
@@ -180,6 +182,8 @@ export function getAllHandlers (obContext: NapCatOneBot11Adapter, core: NapCatCo
     new SetGroupAddOption(obContext, core),
     new SetGroupRobotAddOption(obContext, core),
     new SetGroupSearch(obContext, core),
+    new NCRequestJoinGroup(obContext, core),
+    new NCGetJoinGroupDebugInfo(obContext, core),
     new SetDoubtFriendsAddRequest(obContext, core),
     new GetDoubtFriendsAddRequest(obContext, core),
     new SetFriendRemark(obContext, core),
