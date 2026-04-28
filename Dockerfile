@@ -30,7 +30,8 @@ RUN apt-get update && \
       libcups2 libdrm2 libgtk-3-0 libgbm1 \
       libasound2 libx11-xcb1 libxcomposite1 \
       libxdamage1 libxrandr2 libpango-1.0-0 \
-      libcairo2 libatspi2.0-0 && \
+      libcairo2 libatspi2.0-0 \
+      libgnutls30 libnotify4 libxss1 libxtst6 && \
     ARCH=$(dpkg --print-architecture) && \
     if [ "$ARCH" = "arm64" ]; then \
       QQ_URL="${QQ_DEB_URL_ARM64}"; \
