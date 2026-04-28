@@ -47,6 +47,9 @@ RUN apt-get update && \
 WORKDIR /app
 COPY --from=builder /build/packages/napcat-shell/dist /app
 
+# 安装运行时 npm 依赖（Vite 构建时 external 的包：express, ws）
+RUN npm install --omit=dev express@^5.0.0 ws@^8.18.3
+
 # 拷贝启动脚本
 COPY docker-entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
