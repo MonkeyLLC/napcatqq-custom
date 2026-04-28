@@ -16,7 +16,24 @@ fi
 
 # --- 设置动态库搜索路径（wrapper.node 依赖 QQ 目录下的 .so）---
 QQ_LIB_DIR="$QQ_DIR/resources/app"
-export LD_LIBRARY_PATH="${QQ_LIB_DIR}:${LD_LIBRARY_PATH:-}"
+ARCH="$(dpkg --print-architecture)"
+case "$ARCH" in
+  arm64)
+    SYSTEM_LIB_DIRS="/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu:/lib:/usr/lib"
+    ;;
+  amd64)
+    SYSTEM_LIB_DIRS="/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu:/lib:/usr/lib"
+    ;;
+  *)
+    SYSTEM_LIB_DIRS="/lib:/usr/lib"
+    ;;
+esac
+export LD_LIBRARY_PATH="${SYSTEM_LIB_DIRS}:${QQ_LIB_DIR}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+
+GNUTLS_LIB="$(ldconfig -p 2>/dev/null | awk '/libgnutls\.so\.30/{print $NF; exit}')"
+if [ -n "$GNUTLS_LIB" ]; then
+  export LD_PRELOAD="${GNUTLS_LIB}${LD_PRELOAD:+:${LD_PRELOAD}}"
+fi
 
 # --- 定位 wrapper.node ---
 if [ -z "$NAPCAT_WRAPPER_PATH" ]; then
