@@ -14,6 +14,10 @@ if [ ! -d "$QQ_DIR" ]; then
   exit 1
 fi
 
+# --- 设置动态库搜索路径（wrapper.node 依赖 QQ 目录下的 .so）---
+QQ_LIB_DIR="$QQ_DIR/resources/app"
+export LD_LIBRARY_PATH="${QQ_LIB_DIR}:${LD_LIBRARY_PATH:-}"
+
 # --- 定位 wrapper.node ---
 if [ -z "$NAPCAT_WRAPPER_PATH" ]; then
   # 优先查找 resources/app/wrapper.node（标准路径）
