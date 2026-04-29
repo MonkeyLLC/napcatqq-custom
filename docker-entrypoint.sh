@@ -9,6 +9,7 @@ QQ_CONFIG_DIR="$DATA_DIR/.config/QQ"
 QQ_VERSION_CONFIG="$QQ_CONFIG_DIR/versions/config.json"
 QQ_PACKAGE_JSON="$QQ_APP_DIR/package.json"
 QQ_LOAD_SCRIPT="$QQ_APP_DIR/loadNapCat.js"
+ONEBOT_CONFIG_JSON="$DATA_DIR/config/onebot11.json"
 
 if [ ! -d "$QQ_DIR" ]; then
   echo "[ERROR] QQ is not installed at $QQ_DIR"
@@ -24,6 +25,51 @@ mkdir -p "$DATA_DIR" "$DATA_DIR/config" "$DATA_DIR/logs" "$DATA_DIR/cache" "$DAT
 mkdir -p "$QQ_CONFIG_DIR/versions" /app/.config
 
 cp -rn "$NAPCAT_DIR/config/." "$DATA_DIR/config/" 2>/dev/null || true
+
+if [ ! -f "$ONEBOT_CONFIG_JSON" ]; then
+  cat > "$ONEBOT_CONFIG_JSON" <<'EOF'
+{
+  "network": {
+    "httpServers": [
+      {
+        "enable": true,
+        "name": "HTTP",
+        "host": "0.0.0.0",
+        "port": 3000,
+        "enableCors": true,
+        "enableWebsocket": false,
+        "messagePostFormat": "array",
+        "token": "",
+        "debug": false
+      }
+    ],
+    "httpSseServers": [],
+    "httpClients": [],
+    "websocketServers": [
+      {
+        "enable": true,
+        "name": "WebSocket",
+        "host": "0.0.0.0",
+        "port": 3001,
+        "reportSelfMessage": false,
+        "enableForcePushEvent": true,
+        "messagePostFormat": "array",
+        "token": "",
+        "debug": false,
+        "heartInterval": 30000
+      }
+    ],
+    "websocketClients": [],
+    "plugins": []
+  },
+  "musicSignUrl": "",
+  "enableLocalFile2Url": false,
+  "parseMultMsg": false,
+  "imageDownloadProxy": ""
+}
+EOF
+  echo "[INFO] Generated default OneBot config: $ONEBOT_CONFIG_JSON"
+fi
 
 export HOME=/app
 export XDG_CONFIG_HOME=/app/.config

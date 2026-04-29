@@ -10,6 +10,7 @@ RUN npm install -g pnpm
 WORKDIR /build
 COPY . .
 RUN pnpm install
+RUN pnpm run build:webui
 RUN pnpm run build:shell
 
 # ------ Stage 2: runtime ------
